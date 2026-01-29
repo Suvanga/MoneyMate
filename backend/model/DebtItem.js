@@ -27,12 +27,12 @@ const debtItemSchema = new mongoose.Schema({
             required: true,
         },
         paid: {
-            type: Number,
+            type: Number, //if not working chage to Number
             required: true,
             default: 0,
         },
         due: {
-            type: Number,
+            type: Number, //if not working chage to Number
             required: true,
             default: 0,
         },

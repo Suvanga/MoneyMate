@@ -10,6 +10,8 @@ const isValidEmail = (email) => {
 const createUser = async (req, res) => {
     const username = req.body.username.trim();
     const email = req.body.email.trim().toLowerCase();
+    const firstname = req.body.firstname.trim();
+    const lastname = req.body.lastname.trim();
 
     if (!username || username.length < 3) {
         return res.status(400).json({
@@ -29,6 +31,7 @@ const createUser = async (req, res) => {
     }
 
     try {
+
         if (await UserService.findUserByUserName(username) || await UserService.findUserByEmail(email)) {
             return res.status(409).json({
                 message: "Username or email you entered already exists!"
@@ -40,12 +43,14 @@ const createUser = async (req, res) => {
             // return res.redirect("/admin/user");
         }
 
-        await UserService.createUser({ username, email });
+        await UserService.createUser({ username, email, firstname, lastname });
 
         return res.status(201).json({
             message: "User created",
             username,
-            email
+            email,
+            firstname,
+            lastname
         });
         // req.session.messages.push({
         //     type: "success",
@@ -148,15 +153,19 @@ const updateUser = async (req, res) => {
         });
     }
 
-    if (!username && !email) {
-        return res.status(400).json({
-            message: "Please enter username or email to update!"
-        });
-    }
 
     const updateData = {};
     if (req.body.username) updateData.username = req.body.username.trim();
     if (req.body.email) updateData.email = req.body.email.trim();
+    if (req.body.firstname) updateData.firstname = req.body.firstname.trim();
+    if (req.body.lastname) updateData.lastname = req.body.lastname.trim();
+    if (req.body.connectedUsers) updateData.connectedUsers = req.body.connectedUsers;
+
+    if (!updateData.firstname && !updateData.lastname) {
+        return res.status(400).json({
+            message: "Please enter firstname or lastname to update!"
+        });
+    }
 
     try {
         await UserService.updateUser(userId, updateData);

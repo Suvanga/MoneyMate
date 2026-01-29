@@ -11,11 +11,13 @@ class UserService {
     }
 
     static async findUserById(userId) {
-        return await User.findById(userId).exec();
+        return await User.findById(userId).populate("connectedUsers").exec();
     }
 
     static async findUserByEmail(email) {
-        return await User.findOne({ email: email }).exec();
+        return await User.findOne({ email: email })
+            //.populate("connectedUsers")
+            .exec();
     }
 
     static async updateUser(userId, updatedData) {
@@ -25,6 +27,7 @@ class UserService {
     static async deleteUser(userId) {
         return User.deleteOne({ _id: userId }).exec();
     }
+
 }
 
 export default UserService;

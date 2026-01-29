@@ -3,6 +3,12 @@ import mongoose from "mongoose";
 
 const expenseBillSchema = new mongoose.Schema({
 
+    user:
+    {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+    },
     store:
     {
         type: String,
@@ -10,12 +16,12 @@ const expenseBillSchema = new mongoose.Schema({
     },
     currency: {
         type: String,
-        enum: ["USD", "EUR", "GBP", "INR","NPR"],
+        enum: ["USD", "EUR", "GBP", "INR", "NPR"],
         default: "USD",
     },
-    CardType:{
+    CardType: {
         type: String,
-        required: true
+        required: false
     },
 
     amount: {
@@ -23,13 +29,13 @@ const expenseBillSchema = new mongoose.Schema({
         required: true,
         min: 0.01, // Ensure the amount is positive
     },
-    tip:{
+    tip: {
         type: Number,
-        default: 0.00   
+        default: 0.00
     },
-    TotalAmount:{
+    TotalAmount: {
         type: Number,
-        required: true  
+        required: true
     },
     date: {
         type: Date,

@@ -1,6 +1,6 @@
 import DebtBill from "../model/DebtBill.js";
 import DebtItem from "../model/DebtItem.js";
-import { calculateAutoDueAmounts, processPayment } from "../utils/debtUtils.js";
+import { calculateAutoDueAmounts, processPayment, adjustDebtsForNewExpense } from "../utils/debtUtils.js";
 
 class DebtService {
     static async createDebt(debtBillData, debtItemData) {
@@ -8,13 +8,16 @@ class DebtService {
             const newDebt = new DebtBill(debtBillData);
             const savedDebt = await newDebt.save();
 
-            const debtItemsWithBillId = debtItemData.map(item => ({
-                ...item,
-                BillId: savedDebt._id
-            }));
+            if (debtItemData.length > 0) {
+                const debtItemsWithBillId = debtItemData.map(item => ({
+                    ...item,
+                    BillId: savedDebt._id
+                }));
 
-            const savedDebtItem = await DebtItem.insertMany(debtItemsWithBillId);
-            return { savedDebt, savedDebtItem };
+                const savedDebtItem = await DebtItem.insertMany(debtItemsWithBillId);
+                return { savedDebt, savedDebtItem };
+            }
+            return { savedDebt };
         } catch (error) {
             console.error("Error creating debt:", error);
             throw error;
@@ -26,7 +29,7 @@ class DebtService {
     }
 
     static async findDebtItemsByDebtId(debtBillId) {
-        return DebtItem.find({ BillId: debtBillId }).exec();
+        return DebtItem.find({ BillId: debtBillId }).populate("borrower.person").exec();
     }
 
     static async findDebtByMultipleDebtIds(debtIds) {
@@ -51,19 +54,74 @@ class DebtService {
         return DebtBill.find({
             $and: [
                 { $or: [{ lender: lenderId }, { "participant.person": lenderId }] },
-                { $or: [{ status: "not paid" }, { status: "partially paid" }] }
+                { $or: [{ status: "not paid" }, { status: "partially paid" }] },
+                {
+                    participant: {
+                        $elemMatch: {
+                            person: lenderId,
+                            due: { $gt: 0 }
+                        }
+                    }
+                }
             ]
         }).sort({ createdAt: -1 }).exec();
     }
 
+
     static async findDebtsByLenderAndBorrower(lenderId, borrowerId) {
         return DebtBill.find({
-            $and: [
-                { lender: lenderId },
-                { "participant.person": borrowerId },
-                { $or: [{ status: "not paid" }, { status: "partially paid" }] }
+            $or: [
+                {
+                    $and: [
+                        { lender: lenderId },
+                        { "participant.person": borrowerId },
+                    ]
+                },
+                {
+                    $and: [
+                        { lender: borrowerId },
+                        { "participant.person": lenderId },
+                    ]
+                },
             ]
-        }).sort({ createdAt: -1 }).exec();
+        }).populate('participant.person').populate('lender').sort({ createdAt: -1 }).exec();
+    }
+
+    static async findPendingDebtsByLenderAndBorrower(lenderId, borrowerId) {
+        return DebtBill.find({
+            $or: [
+                {
+                    $and: [
+                        { lender: lenderId },
+                        { "participant.person": borrowerId },
+                        { $or: [{ status: "not paid" }, { status: "partially paid" }] },
+                        {
+                            participant: {
+                                $elemMatch: {
+                                    person: borrowerId,
+                                    due: { $gt: 0 }
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    $and: [
+                        { lender: borrowerId },
+                        { "participant.person": lenderId },
+                        { $or: [{ status: "not paid" }, { status: "partially paid" }] },
+                        {
+                            participant: {
+                                $elemMatch: {
+                                    person: lenderId,
+                                    due: { $gt: 0 }
+                                }
+                            }
+                        }
+                    ]
+                },
+            ]
+        }).populate('participant.person').populate('lender').sort({ createdAt: -1 }).exec();
     }
 
     static async findDebtsWithConnectedUser(lenderId, borrowerId) {
@@ -106,6 +164,10 @@ class DebtService {
 
     static async processPayment(payerId, payeeId, amount) {
         return processPayment(payerId, payeeId, amount);
+    }
+
+    static async adjustDebtsForNewExpense(payerId, payeeId, amount) {
+        return adjustDebtsForNewExpense(payerId, payeeId, amount);
     }
 }
 

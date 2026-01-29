@@ -22,7 +22,7 @@ const createDebt = async (req, res) => {
     }
 
     for (const item of debtItemData) {
-        if (!item?.item || !item?.amount || !item?.borrower) {
+        if (!item?.item || !item?.amount) {
             return res.status(400).json({
                 message: "Please enter all required Item fields!"
             });
@@ -35,20 +35,24 @@ const createDebt = async (req, res) => {
         //right now we can only divide equally
         await DebtService.calculateDueAmounts(savedDebt._id);
 
-
+        const updatedDebt = await DebtService.findDebtById(savedDebt._id);
         //Need to handle this
         // Handle the scenario where person1 owes money to person2 and person1 adds a bill with person2 as the borrower
         const lenderId = debtBillData.lender;
         const borrowersArray = debtBillData.participant;
 
         for (const borrower of borrowersArray) {
-            const existingDebts = await DebtService.findDebtsByLenderAndBorrower(borrower.person, lenderId);
-            console.log("Existing debts: ", existingDebts.length);
+            const amount = updatedDebt.participant.find(p => p.person.toString() === borrower.person.toString())?.due || 0;
+
+            const existingDebts = await DebtService.findPendingDebtsByLenderAndBorrower(borrower.person, lenderId);
             if (existingDebts.length > 0) {
-                console.log("Processing existing debts between lender and borrower");
                 for (const debt of existingDebts) {
                     if (debt._id.toString() !== savedDebt._id.toString()) {
-                        await DebtService.processPayment(lenderId, borrower.person, debt.amount);
+
+                        await DebtService.adjustDebtsForNewExpense(lenderId, borrower.person, amount);
+
+                        /* For reference: Comment previous and uncomment below if not working */
+                        // await DebtService.processPayment(lenderId, borrower.person, debt.amount);
                         console.log("Processed payment for debt: ");
                     }
                 }
@@ -219,8 +223,35 @@ const getPendingDebtsByLenderAndBorrower = async (req, res) => {
     }
 
     try {
-        const debts = await DebtService.findDebtsByLenderAndBorrower(lenderId, borrowerId);
-        return res.status(200).json(debts);
+        const debts = await DebtService.findPendingDebtsByLenderAndBorrower(lenderId, borrowerId);
+        let totalDue = 0;
+        let ConnectedName = "";
+        let debtType = "";
+
+        debts.forEach(debt => {
+            debt.participant.forEach(participant => {
+                if (participant.person._id.toString() === borrowerId.toString()) {
+                    totalDue += participant.due;
+                    ConnectedName = participant.person.firstname;
+                }
+                if (participant.person._id.toString() === lenderId.toString()) {
+                    totalDue -= participant.due;
+                    ConnectedName = debt.lender.firstname;
+                }
+            });
+        });
+        if (totalDue > 0) {
+            debtType = "Owes you";
+        }
+        else if (totalDue < 0) {
+            debtType = "You owe";
+        }
+
+        else {
+            debtType = "settled";
+        }
+
+        return res.status(200).json({ debts, totalDue, ConnectedName, debtType });
     } catch (err) {
         console.error(err);
         return res.status(500).json({
@@ -228,6 +259,126 @@ const getPendingDebtsByLenderAndBorrower = async (req, res) => {
         });
     }
 };
+
+const getAllDebtsByLenderAndBorrower = async (req, res) => {
+    const { lenderId, borrowerId } = req.query;
+
+    if (!lenderId || !borrowerId) {
+        return res.status(400).json({
+            message: "Please enter Lender and Borrower!"
+        });
+    }
+
+    try {
+        const debts = await DebtService.findDebtsByLenderAndBorrower(lenderId, borrowerId);
+        let totalDue = 0;
+        let ConnectedName = "";
+        let debtType = "";
+
+        debts.forEach(debt => {
+            debt.participant.forEach(participant => {
+                if (participant.person._id.toString() === borrowerId.toString()) {
+                    totalDue += participant.due;
+                    ConnectedName = participant.person.firstname;
+                }
+                if (participant.person._id.toString() === lenderId.toString()) {
+                    totalDue -= participant.due;
+                    ConnectedName = debt.lender.firstname;
+                }
+            });
+        });
+        if (totalDue > 0) {
+            debtType = "Owes you";
+        }
+        else if (totalDue < 0) {
+            debtType = "You owe";
+        }
+
+        else {
+            debtType = "settled";
+        }
+
+        return res.status(200).json({ debts, totalDue, ConnectedName, debtType });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            message: "There was an error while fetching the Debts!"
+        });
+    }
+};
+const getPendingDebtsByLenderAndBorrowers = async (req, res) => {
+    const lenderId = req.params.lenderId;
+    const borrowerIds = req.body.borrowerIds;
+
+    if (!lenderId || !Array.isArray(borrowerIds) || borrowerIds.length === 0) {
+        return res.status(400).json({
+            message: "Please provide lenderId and a non-empty array of borrowerIds.",
+        });
+    }
+
+    try {
+        const result = await Promise.all(
+            borrowerIds.map(async (borrowerId) => {
+                const debts = await DebtService.findPendingDebtsByLenderAndBorrower(lenderId, borrowerId);
+                let totalDue = 0;
+                let ConnectedName = "";
+                let debtType = "";
+
+                debts.forEach((debt) => {
+                    debt.participant.forEach((participant) => {
+                        if (participant.person._id.toString() === borrowerId.toString()) {
+                            totalDue += participant.due;
+                            ConnectedName = participant.person.firstname;
+                        }
+                    });
+                });
+
+                const debtsOwed = await DebtService.findPendingDebtsByLenderAndBorrower(borrowerId, lenderId);
+
+                debtsOwed.forEach((debt) => {
+                    if (debt.lender._id.toString() === borrowerId.toString()) {
+                        debt.participant.forEach((participant) => {
+                            if (participant.person._id.toString() === lenderId.toString()) {
+                                totalDue -= participant.due;
+                                ConnectedName = debt.lender.firstname;
+                            }
+                        });
+                    }
+                });
+
+
+
+                if (totalDue > 0) {
+                    debtType = "Owes you";
+                }
+                else if (totalDue < 0) {
+                    debtType = "You owe";
+                }
+
+                else {
+                    debtType = "settled";
+                }
+
+                return {
+                    ConnectedId: borrowerId,
+                    ConnectedName,
+                    debtType,
+                    totalDue,
+                    debts,
+                    debtsOwed
+                };
+            })
+        );
+
+        return res.status(200).json({ result });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            message: "There was an error while fetching the debts.",
+        });
+    }
+};
+
 
 const updateDebt = async (req, res) => {
     const debtId = req.params.debtId;
@@ -308,6 +459,8 @@ export default {
     getDebtsWithConnectedUser,
     getPendingDebtsWithConnectedUser,
     getPendingDebtsByLenderAndBorrower,
+    getPendingDebtsByLenderAndBorrowers,
+    getAllDebtsByLenderAndBorrower,
     updateDebt,
     deleteDebt,
     processPayment
